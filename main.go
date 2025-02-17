@@ -43,8 +43,7 @@ func init() {
 	flag.StringVar(&caCertsImageURL, "ca-certs-image-url", "", "The URL of an image to extract the CA certificates from")
 	flag.StringVar(&destImageURL, "dest-image-url", "", "The URL of the image to push the modified image to")
 	flag.StringVar(&platformStr, "platform", "linux/amd64", "The platform to build the image for")
-
-	flag.StringVar(&imageCertPath, "image-cert-path", "/etc/ssl/certs/ca-certificates.crt", "The path to the certificate file in the image (optional)")
+	flag.StringVar(&imageCertPath, "image-cert-path", "", "The path to the certificate file in the image (optional)")
 	flag.IntVar(&ownerUserID, "owner-user-id", 0, "The user ID of the owner of the certificate file in the image (optional)")
 	flag.IntVar(&ownerGroupID, "owner-group-id", 0, "The group ID of the owner of the certificate file in the image (optional)")
 	flag.StringVar(&outputCerts, "output-certs-path", "", "Output the (appended) certificates file from the image to a local file (optional)")
@@ -158,6 +157,20 @@ func getCertBytes(platform v1.Platform) ([]byte, error) {
 	}
 }
 
+// TODO - add more cert file paths
+func isACertFile(lookup string) bool {
+	switch lookup {
+	case
+		"etc/ssl/ca-bundle.pem",                            // OpenSUSE
+		"etc/pki/tls/cacert.pem",                           // OpenELEC
+		"etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", // CentOS/RHEL 7
+		//	"etc/ssl/cert.pem",                                 // Alpine Linux
+		"etc/ssl/certs/ca-certificates.crt": // Debian/Ubuntu/Gentoo etc.
+		return true
+	}
+	return false
+}
+
 // Extract the ca-certificates file from the remote image
 func extractCACerts(img v1.Image) ([]byte, error) {
 	flattened := mutate.Extract(img)
@@ -169,11 +182,14 @@ func extractCACerts(img v1.Image) ([]byte, error) {
 		if err == io.EOF {
 			break
 		}
-		if hdr.Name == imageCertPath || hdr.Name == strings.TrimPrefix(imageCertPath, "/") {
+		//	if hdr.Name == imageCertPath || hdr.Name == strings.TrimPrefix(imageCertPath, "/") {
+		if isACertFile(hdr.Name) || isACertFile(strings.TrimPrefix(hdr.Name, "/")) {
+			log.Println("/" + hdr.Name + " selected")
+			imageCertPath = "/" + hdr.Name
 			return io.ReadAll(tr)
 		}
 	}
-	return nil, fmt.Errorf("failed to find %s in remote image", imageCertPath)
+	return nil, fmt.Errorf("failed to find certs in remote image")
 }
 
 func newImage(old v1.Image, caCertBytes []byte) (v1.Image, error) {
